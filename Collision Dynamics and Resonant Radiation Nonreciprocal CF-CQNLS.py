@@ -28,62 +28,30 @@ COLORS = {
     'ghost': '#e0e1dd',  # Reciprocal "Ghost" color (Silver/White)
 }
 
-# ===================== Science Journal Style =====================
+# 📐 Plot Styling (完全保留)
 plt.rcParams.update({
-    # --- Font ---
     'font.family': 'sans-serif',
-    'font.sans-serif': ['Helvetica', 'Arial', 'DejaVu Sans'],
-    'font.size': 7,
-    'axes.labelsize': 8,
-    'axes.labelweight': 'normal',
-    'axes.titlesize': 8,
+    'font.sans-serif': ['Arial', 'DejaVu Sans'],
+    'font.size': 10,
+    'axes.labelsize': 11,
+    'axes.labelweight': 'bold',
+    'axes.titlesize': 12,
     'axes.titleweight': 'bold',
-    'xtick.labelsize': 7,
-    'ytick.labelsize': 7,
-    # --- Axes ---
-    'axes.linewidth': 0.8,
-    'axes.edgecolor': '#000000',
-    'axes.grid': False,           # Science style: no grid by default
-    'axes.spines.top': True,
-    'axes.spines.right': True,
-    # --- Ticks ---
-    'xtick.direction': 'in',
-    'ytick.direction': 'in',
-    'xtick.top': True,
-    'ytick.right': True,
-    'xtick.major.width': 0.8,
-    'ytick.major.width': 0.8,
-    'xtick.minor.width': 0.6,
-    'ytick.minor.width': 0.6,
-    'xtick.major.size': 3.5,
-    'ytick.major.size': 3.5,
-    'xtick.minor.size': 2.0,
-    'ytick.minor.size': 2.0,
-    'xtick.minor.visible': True,
-    'ytick.minor.visible': True,
-    # --- Lines & Markers ---
-    'lines.linewidth': 1.0,
-    'lines.markersize': 4,
-    # --- Legend ---
-    'legend.frameon': True,
-    'legend.framealpha': 0.9,
-    'legend.edgecolor': '#cccccc',
-    'legend.fontsize': 6,
-    'legend.handlelength': 1.5,
-    'legend.borderpad': 0.4,
-    # --- Figure ---
+    'xtick.labelsize': 9,
+    'ytick.labelsize': 9,
+    'axes.linewidth': 1.2,
+    'axes.edgecolor': '#555555',
+    'axes.grid': True,
+    'grid.alpha': 0.15,
+    'grid.color': 'black',
+    'grid.linestyle': '-',
+    'legend.frameon': False,
     'figure.dpi': 150,
     'savefig.dpi': 600,
-    'figure.facecolor': 'white',
-    'axes.facecolor': 'white',
-    # --- Math ---
-    'text.usetex': False,
-    'axes.formatter.use_mathtext': True,
     'mathtext.fontset': 'stixsans',
-    # --- Layout ---
-    'figure.constrained_layout.use': False,
-    'savefig.bbox': 'tight',
-    'savefig.pad_inches': 0.05,
+    # ============ 只添加这 2 行，启用 LaTeX 符号 ============
+    'text.usetex': False,    # 不启用完整LaTeX，避免报错
+    'axes.formatter.use_mathtext': True  # 启用 $ $ 符号渲染
 })
 
 
@@ -104,8 +72,7 @@ def add_ghost_trace(ax, x, y, color, lw=2, alpha=0.5, label=None):
 def style_axis(ax, spines_off=['top', 'right']):
     for s in spines_off:
         ax.spines[s].set_visible(False)
-    ax.tick_params(direction='in', width=0.8, length=3.5, colors='#000000')
-    ax.tick_params(which='minor', direction='in', width=0.6, length=2.0)
+    ax.tick_params(direction='out', width=1.2, length=4, colors='#333333')
 
 
 def set_seed(seed=42):
@@ -317,8 +284,7 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
     style_axis(ax_traj, spines_off=['top', 'right', 'bottom'])
     ax_traj.set_yticks([])
     ax_traj.set_ylabel('Evol.')
-    # ============ 删除 ax_traj 的图例 ============
-    # ax_traj.legend(loc='upper right', fontsize=8, ncol=2)
+    ax_traj.legend(loc='upper right', fontsize=8, ncol=2)
 
     indices = [0, np.argmin(np.abs(t - t_col)), len(t) - 1]
     titles = [fr'Initial State ($t={t[0]:.1f}$)', fr'Collision ($t={t_col:.1f}$)', fr'Final State ($t={t[-1]:.1f}$)']
@@ -342,18 +308,17 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
         ax.text(0.5, 0.95, titles[i], transform=ax.transAxes, fontsize=9, fontweight='bold',
                 color=COLORS['dark'], ha='center', va='top')
 
-        # ============ 删除 Initial State 子图的图例 ============
-        # if i == 0:
-        #     from matplotlib.lines import Line2D
-        #     l = [Line2D([0], [0], color=COLORS['ghost'], lw=2, alpha=0.6, label='Reciprocal'),
-        #          Line2D([0], [0], color=COLORS['cyan'], lw=2, label='Non-reciprocal')]
-        #     ax.legend(handles=l, loc='lower right', fontsize=8)
+        if i == 0:
+            from matplotlib.lines import Line2D
+            l = [Line2D([0], [0], color=COLORS['ghost'], lw=2, alpha=0.6, label='Reciprocal'),
+                 Line2D([0], [0], color=COLORS['cyan'], lw=2, label='Non-reciprocal')]
+            ax.legend(handles=l, loc='lower right', fontsize=8)
 
         if i == 2: ax.set_xlabel(r'Position $x$')
 
     plt.suptitle("Nonreciprocal Soliton Scattering Dynamics", x=0.05, y=0.98, ha='left', fontsize=14, weight='bold')
     plt.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.1)
-    plt.savefig(f"{OUTPUT_DIR}/Fig1_Dynamics_{name}.png", bbox_inches='tight', dpi=600)
+    plt.savefig(f"{OUTPUT_DIR}/Fig1_Dynamics_{name}.png", bbox_inches='tight')
     plt.savefig(f"{OUTPUT_DIR}/Fig1_Dynamics_{name}.pdf", bbox_inches='tight')
     plt.close()
 
@@ -412,7 +377,7 @@ def create_figure2_ultimate(data, cfg, name="baseline"):
     ax2.legend(lines + lines2, labels + labels2, loc='center right', fontsize=8)
 
     plt.subplots_adjust(left=0.15, right=0.9, top=0.92, bottom=0.12)
-    plt.savefig(f"{OUTPUT_DIR}/Fig2_Observables_{name}.png", bbox_inches='tight', dpi=600)
+    plt.savefig(f"{OUTPUT_DIR}/Fig2_Observables_{name}.png", bbox_inches='tight')
     plt.savefig(f"{OUTPUT_DIR}/Fig2_Observables_{name}.pdf", bbox_inches='tight')
     plt.close()
 
@@ -468,7 +433,7 @@ def create_figure3_combined(gamma_vals, gamma_data, alphas, a_res):
         Line2D([0], [0], color=COLORS['cyan'], lw=2, label=r'Phase Shift $\Delta\phi$'),
         Line2D([0], [0], color=COLORS['accent'], lw=2, label=r'Velocity Asymmetry $|\Delta v|$')
     ]
-    ax1.legend(handles=legend_elements, loc='upper right')
+    ax1.legend(handles=legend_elements, loc='upper left')
     ax1.set_title("Tunable Nonreciprocity Statistics", fontweight='bold')
 
     # 右边子图
@@ -513,7 +478,7 @@ def create_figure3_combined(gamma_vals, gamma_data, alphas, a_res):
     ax2.legend(lines, labels=[l.get_label() for l in lines], loc='upper right', fontsize=10)
 
     plt.subplots_adjust(left=0.08, right=0.95, top=0.9, bottom=0.15)
-    plt.savefig(f"{OUTPUT_DIR}/Fig3_Combined.png", bbox_inches='tight', dpi=600)
+    plt.savefig(f"{OUTPUT_DIR}/Fig3_Combined.png", bbox_inches='tight')
     plt.savefig(f"{OUTPUT_DIR}/Fig3_Combined.pdf", bbox_inches='tight')
     plt.close()
 
@@ -570,7 +535,7 @@ def create_figure4_ultimate(all_results, cfg):
     ax2.legend(loc='upper right', fontsize=9)
 
     plt.subplots_adjust(left=0.08, right=0.95, top=0.9, bottom=0.15)
-    plt.savefig(f"{OUTPUT_DIR}/Fig4_Physics.png", bbox_inches='tight', dpi=600)
+    plt.savefig(f"{OUTPUT_DIR}/Fig4_Physics.png", bbox_inches='tight')
     plt.savefig(f"{OUTPUT_DIR}/Fig4_Physics.pdf", bbox_inches='tight')
     plt.close()
 
