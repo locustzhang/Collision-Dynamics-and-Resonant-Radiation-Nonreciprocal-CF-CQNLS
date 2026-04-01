@@ -101,6 +101,7 @@ class SimConfig:
     v: float = 1.0
     shift: int = 150
     gamma: float = 1.0
+    beta: float = 1.0   # <--- 只加这一行
     gs_tol: float = 1e-8
     collision_sep_threshold: float = 5.0
 
@@ -130,11 +131,19 @@ class NonreciprocalFCQNLS:
 
     def hamiltonian(self, psi):
         psi_k = torch.fft.fft(psi, dim=1)
+        # 分数阶动能项: ψ_j*(-Δ)^{α/2}ψ_j
         kin = torch.sum(self.k_alpha * torch.abs(psi_k) ** 2) * self.cfg.dx / self.cfg.N
+    
         rho = torch.abs(psi) ** 2
-        self_e = -0.5 * torch.sum(rho[0] ** 2 + rho[1] ** 2) * self.cfg.dx
-        cross = -self.gamma_12 * torch.sum(rho[0] * rho[1]) * self.cfg.dx
-        return kin + self_e + cross
+        # 三次项: -1/2 |ψ_j|^4
+        cubic = -0.5 * torch.sum(rho[0] ** 2 + rho[1] ** 2) * self.cfg.dx
+        # 五次项: -β/3 |ψ_j|^6
+        quintic = -self.cfg.beta / 3.0 * torch.sum(rho[0] ** 3 + rho[1] ** 3) * self.cfg.dx
+    
+        # 对称交叉项: -(γ12+γ21)/2 |ψ1|^2|ψ2|^2
+        cross = -(self.gamma_12 + self.gamma_21) / 2.0 * torch.sum(rho[0] * rho[1]) * self.cfg.dx
+    
+        return kin + cubic + quintic + cross
 
     def momentum(self, psi):
         dpsi = torch.fft.ifft(1j * self.k * torch.fft.fft(psi, dim=1), dim=1)
@@ -284,7 +293,7 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
     style_axis(ax_traj, spines_off=['top', 'right', 'bottom'])
     ax_traj.set_yticks([])
     ax_traj.set_ylabel('Evol.')
-    ax_traj.legend(loc='upper right', fontsize=8, ncol=2)
+    #ax_traj.legend(loc='upper right', fontsize=8, ncol=2)
 
     indices = [0, np.argmin(np.abs(t - t_col)), len(t) - 1]
     titles = [fr'Initial State ($t={t[0]:.1f}$)', fr'Collision ($t={t_col:.1f}$)', fr'Final State ($t={t[-1]:.1f}$)']
@@ -308,11 +317,12 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
         ax.text(0.5, 0.95, titles[i], transform=ax.transAxes, fontsize=9, fontweight='bold',
                 color=COLORS['dark'], ha='center', va='top')
 
-        if i == 0:
-            from matplotlib.lines import Line2D
-            l = [Line2D([0], [0], color=COLORS['ghost'], lw=2, alpha=0.6, label='Reciprocal'),
-                 Line2D([0], [0], color=COLORS['cyan'], lw=2, label='Non-reciprocal')]
-            ax.legend(handles=l, loc='lower right', fontsize=8)
+        # ============ 删除 Initial State 子图的图例 ============
+        # if i == 0:
+        #     from matplotlib.lines import Line2D
+        #     l = [Line2D([0], [0], color=COLORS['ghost'], lw=2, alpha=0.6, label='Reciprocal'),
+        #          Line2D([0], [0], color=COLORS['cyan'], lw=2, label='Non-reciprocal')]
+        #     ax.legend(handles=l, loc='lower right', fontsize=8)
 
         if i == 2: ax.set_xlabel(r'Position $x$')
 
