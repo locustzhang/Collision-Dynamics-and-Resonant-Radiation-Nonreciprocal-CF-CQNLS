@@ -138,7 +138,8 @@ def create_figure5(alphas, vel_bundle, amp_bundle, cfg_base):
     ax1.legend(loc='upper right', fontsize=8.5)
 
     # ===== 左图内嵌子图 =====
-    ax1_in = ax1.inset_axes([1 - 0.36 - 0.02, 0.34, 0.36, 0.34])
+    ax1_in = ax1.inset_axes([0.64, 0.34, 0.28, 0.26])
+    #ax1_in = ax1.inset_axes([0.05, 0.70, 0.28, 0.26])
     vels_used = [float(lbl.replace('$', '').split('=')[1]) for lbl in vel_labels]
     ax1_in.scatter(vels_used, vel_res_alphas,
                    color=vel_colors[:len(vels_used)], edgecolors='white', s=55, lw=1.2, zorder=5)
@@ -172,7 +173,7 @@ def create_figure5(alphas, vel_bundle, amp_bundle, cfg_base):
 
     # ===== 右图内嵌子图 =====
     #ax2_in = ax2.inset_axes([1 - 0.36 - 0.02, 0.34, 0.36, 0.34])
-    ax2_in = ax2.inset_axes([0.03, 0.63, 0.35, 0.33])
+    ax2_in = ax2.inset_axes([0.06, 0.70, 0.28, 0.26])
     norms_used = [float(lbl.replace('$', '').split('=')[1]) for lbl in amp_labels]
     ax2_in.scatter(norms_used, amp_res_alphas,
                    color=amp_colors[:len(norms_used)], edgecolors='white', s=55, lw=1.2, zorder=5)
