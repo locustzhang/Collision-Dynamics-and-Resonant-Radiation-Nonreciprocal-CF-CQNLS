@@ -101,7 +101,7 @@ class SimConfig:
     v: float = 1.0
     shift: int = 150
     gamma: float = 1.0
-    beta: float = 1.0   # <--- 只加这一行
+    beta: float = 0.01   # <--- 只加这一行
     gs_tol: float = 1e-8
     collision_sep_threshold: float = 5.0
 
@@ -162,10 +162,10 @@ class NonreciprocalFCQNLS:
             psi_k = torch.fft.fft(psi)
             psi = torch.fft.ifft(psi_k * torch.exp(-self.k_alpha * 0.002))
             rho = torch.abs(psi) ** 2
-            psi = psi * torch.exp(rho * 0.002)
+            psi = psi * torch.exp((rho + self.cfg.beta * rho**2) * 0.002)
             psi = psi / torch.sqrt(torch.sum(torch.abs(psi) ** 2) * self.cfg.dx) * np.sqrt(5.0)
         return psi
-
+       
     def run_collision(self, psi0, save_full=True):
         cfg = self.cfg
         steps = int(cfg.T / cfg.dt)
@@ -182,8 +182,8 @@ class NonreciprocalFCQNLS:
         for i in range(steps):
             psi = torch.fft.ifft(torch.fft.fft(psi, dim=1) * self.lin_half, dim=1)
             rho1, rho2 = torch.abs(psi[0]) ** 2, torch.abs(psi[1]) ** 2
-            psi[0] *= torch.exp(1j * (rho1 + self.gamma_12 * rho2) * cfg.dt)
-            psi[1] *= torch.exp(1j * (rho2 + self.gamma_21 * rho1) * cfg.dt)
+            psi[0] *= torch.exp(1j * (rho1 + cfg.beta * rho1**2 + self.gamma_12 * rho2) * cfg.dt)
+            psi[1] *= torch.exp(1j * (rho2 + cfg.beta * rho2**2 + self.gamma_21 * rho1) * cfg.dt)
             psi = torch.fft.ifft(torch.fft.fft(psi, dim=1) * self.lin_half, dim=1)
 
             if abs(i * cfg.dt - cfg.T / 2) < cfg.dt / 2:
@@ -208,7 +208,8 @@ class NonreciprocalFCQNLS:
                 data['cm2'].append(cm2.item())
                 data['v1'].append(v1.item())
                 data['v2'].append(v2.item())
-                data['dv'].append(v1.item() - v2.item())
+                #data['dv'].append(v1.item() - v2.item())
+                data['dv'].append(abs(abs(v1.item()) - abs(v2.item())))
                 data['P'].append(P_tot.item())
                 data['H_err'].append(H_err.item())
                 data['peak_rho'].append(torch.max(rho_tot).item())
@@ -239,7 +240,12 @@ class NonreciprocalFCQNLS:
 
 def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
     field_nr = data_nr['field']
-    t = data_nr['t']
+
+    # ====================== FIX: 使用各自的时间轴 ======================
+    t_ref = data_ref['t']
+    t_nr  = data_nr['t']
+    # ================================================================
+
     rho_total_nr = field_nr[:, 0, :] + field_nr[:, 1, :]
     t_col = data_nr['t_collision']
 
@@ -256,14 +262,22 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
     ax_map = fig.add_subplot(gs[1:, 0])
     ax_map.set_facecolor('black')
 
-    # LaTeX 符号
-    add_ghost_trace(ax_map, data_ref['cm1'], t, COLORS['ghost'], lw=1.5, label=r'Reciprocal ($\gamma_{12}=\gamma_{21}=1.0$)')
-    add_ghost_trace(ax_map, data_ref['cm2'], t, COLORS['ghost'], lw=1.5)
+    # ====================== Reciprocal (Ghost) ======================
+    add_ghost_trace(
+        ax_map, data_ref['cm1'], t_ref, COLORS['ghost'], lw=1.5,
+        label=r'Reciprocal ($\gamma_{12}=\gamma_{21}=1.0$)'
+    )
+    add_ghost_trace(ax_map, data_ref['cm2'], t_ref, COLORS['ghost'], lw=1.5)
 
+    # ====================== Nonreciprocal (Active) ======================
     gamma_12 = cfg.gamma
     gamma_21 = 2.0 - cfg.gamma
-    add_glow(ax_map, data_nr['cm1'], t, COLORS['cyan'], lw=1.5, label=f'Non-reciprocal ($\\gamma_{{12}}={gamma_12:.1f}$, $\\gamma_{{21}}={gamma_21:.1f}$)')
-    add_glow(ax_map, data_nr['cm2'], t, COLORS['magenta'], lw=1.5)
+
+    add_glow(
+        ax_map, data_nr['cm1'], t_nr, COLORS['cyan'], lw=1.5,
+        label=f'Non-reciprocal ($\\gamma_{{12}}={gamma_12:.1f}$, $\\gamma_{{21}}={gamma_21:.1f}$)'
+    )
+    add_glow(ax_map, data_nr['cm2'], t_nr, COLORS['magenta'], lw=1.5)
 
     ax_map.text(20, t_col, "SYMMETRY\nBREAKING", color='white', ha='left', va='center',
                 fontsize=8, fontweight='bold',
@@ -279,13 +293,17 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
     ax_map.set_ylim(0, cfg.T)
 
     leg = ax_map.legend(loc='lower left', fontsize=8, facecolor='black', framealpha=0.4)
-    for text in leg.get_texts(): text.set_color('white')
+    for text in leg.get_texts():
+        text.set_color('white')
 
+    # ====================== Top Trajectory Panel ======================
     ax_traj = fig.add_subplot(gs[0, 0], sharex=ax_map)
-    add_ghost_trace(ax_traj, data_ref['cm1'], t, COLORS['ghost'], lw=1.5, label=r'Ref ($\gamma=1.0$)')
-    add_ghost_trace(ax_traj, data_ref['cm2'], t, COLORS['ghost'], lw=1.5)
-    add_glow(ax_traj, data_nr['cm1'], t, COLORS['cyan'], label=f'NR ($\\gamma_{{12}}={gamma_12:.1f}$)')
-    add_glow(ax_traj, data_nr['cm2'], t, COLORS['magenta'])
+
+    add_ghost_trace(ax_traj, data_ref['cm1'], t_ref, COLORS['ghost'], lw=1.5, label=r'Ref ($\gamma=1.0$)')
+    add_ghost_trace(ax_traj, data_ref['cm2'], t_ref, COLORS['ghost'], lw=1.5)
+
+    add_glow(ax_traj, data_nr['cm1'], t_nr, COLORS['cyan'], label=f'NR ($\\gamma_{{12}}={gamma_12:.1f}$)')
+    add_glow(ax_traj, data_nr['cm2'], t_nr, COLORS['magenta'])
 
     ax_traj.scatter(data_nr['x_collision'], t_col, color=COLORS['gold'], s=200, marker='*',
                     edgecolor='white', lw=1.5, zorder=10)
@@ -293,10 +311,14 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
     style_axis(ax_traj, spines_off=['top', 'right', 'bottom'])
     ax_traj.set_yticks([])
     ax_traj.set_ylabel('Evol.')
-    #ax_traj.legend(loc='upper right', fontsize=8, ncol=2)
 
-    indices = [0, np.argmin(np.abs(t - t_col)), len(t) - 1]
-    titles = [fr'Initial State ($t={t[0]:.1f}$)', fr'Collision ($t={t_col:.1f}$)', fr'Final State ($t={t[-1]:.1f}$)']
+    # ====================== Right Density Snapshots ======================
+    indices = [0, np.argmin(np.abs(t_nr - t_col)), len(t_nr) - 1]
+    titles = [
+        fr'Initial State ($t={t_nr[0]:.1f}$)',
+        fr'Collision ($t={t_col:.1f}$)',
+        fr'Final State ($t={t_nr[-1]:.1f}$)'
+    ]
 
     for i, idx in enumerate(indices):
         ax = fig.add_subplot(gs[i, 1])
@@ -307,8 +329,10 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
 
         ax.fill_between(x, field_nr[idx, 0, :], color=COLORS['cyan'], alpha=0.2)
         ax.plot(x, field_nr[idx, 0, :], color=COLORS['cyan'], lw=1.5)
+
         ax.fill_between(x, field_nr[idx, 1, :], color=COLORS['magenta'], alpha=0.2)
         ax.plot(x, field_nr[idx, 1, :], color=COLORS['magenta'], lw=1.5)
+
         style_axis(ax)
         ax.set_xlim(-visual_limit, visual_limit)
         ax.set_ylim(0, np.max(rho_total_nr) * 1.1)
@@ -317,16 +341,12 @@ def create_figure1_ultimate(data_ref, data_nr, x, cfg, name="comparison"):
         ax.text(0.5, 0.95, titles[i], transform=ax.transAxes, fontsize=9, fontweight='bold',
                 color=COLORS['dark'], ha='center', va='top')
 
-        # ============ 删除 Initial State 子图的图例 ============
-        # if i == 0:
-        #     from matplotlib.lines import Line2D
-        #     l = [Line2D([0], [0], color=COLORS['ghost'], lw=2, alpha=0.6, label='Reciprocal'),
-        #          Line2D([0], [0], color=COLORS['cyan'], lw=2, label='Non-reciprocal')]
-        #     ax.legend(handles=l, loc='lower right', fontsize=8)
+        if i == 2:
+            ax.set_xlabel(r'Position $x$')
 
-        if i == 2: ax.set_xlabel(r'Position $x$')
+    plt.suptitle("Nonreciprocal Soliton Scattering Dynamics",
+                 x=0.05, y=0.98, ha='left', fontsize=14, weight='bold')
 
-    plt.suptitle("Nonreciprocal Soliton Scattering Dynamics", x=0.05, y=0.98, ha='left', fontsize=14, weight='bold')
     plt.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.1)
     plt.savefig(f"{OUTPUT_DIR}/Fig1_Dynamics_{name}.png", bbox_inches='tight')
     plt.savefig(f"{OUTPUT_DIR}/Fig1_Dynamics_{name}.pdf", bbox_inches='tight')
@@ -339,7 +359,8 @@ def create_figure2_ultimate(data, cfg, name="baseline"):
 
     ax1.axhline(0, color='black', lw=0.8, alpha=0.3)
     # ====================== 核心修改：统一使用绝对值速度差 ======================
-    dv_abs = np.abs(np.abs(data['v1']) - np.abs(data['v2']))
+    #dv_abs = np.abs(np.abs(data['v1']) - np.abs(data['v2']))
+    dv_abs = data['dv']
     ax1.fill_between(t, 0, dv_abs, color=COLORS['accent'], alpha=0.15)
     add_glow(ax1, t, dv_abs, COLORS['accent'])
 
@@ -391,13 +412,13 @@ def create_figure2_ultimate(data, cfg, name="baseline"):
     plt.savefig(f"{OUTPUT_DIR}/Fig2_Observables_{name}.pdf", bbox_inches='tight')
     plt.close()
 
-
 def create_figure3_combined(gamma_vals, gamma_data, alphas, a_res):
     fig, (ax1, ax2_wrapper) = plt.subplots(1, 2, figsize=(14, 4.5), constrained_layout=True)
 
+    # ====================== FIX 1: 统一使用 data['dv'] ======================
     phases = [np.max(r['phase']) for r in gamma_data]
-    # ====================== 核心修改：Δv = |v₁| - |v₂| 绝对值速度差 ======================
-    dvs = [abs(abs(r['v1'][-1]) - abs(r['v2'][-1])) for r in gamma_data]
+    dvs = [r['dv'][-1] for r in gamma_data]
+    # ======================================================================
 
     # -------------------------- 折叠为 |Δγ| 轴 --------------------------
     delta_gammas = np.abs(2 * (gamma_vals - 1.0))
@@ -405,25 +426,25 @@ def create_figure3_combined(gamma_vals, gamma_data, alphas, a_res):
     delta_gammas_sorted = delta_gammas[sort_idx]
     phases_sorted = np.array(phases)[sort_idx]
     dvs_sorted = np.array(dvs)[sort_idx]
-    # -------------------------------------------------------------------------
 
     ax1_2 = ax1.twinx()
-    l1 = add_glow(ax1, delta_gammas_sorted, phases_sorted, COLORS['cyan'], label=r'Max Phase Shift $\Delta\phi$')
-    ax1.scatter(delta_gammas_sorted, phases_sorted, color='white', edgecolors=COLORS['cyan'], s=60, lw=1.5, zorder=10)
 
-    l2 = add_glow(ax1_2, delta_gammas_sorted, dvs_sorted, COLORS['accent'], label=r'Velocity Asymmetry $|\Delta v| = ||v_1|-|v_2||$')
-    ax1_2.scatter(delta_gammas_sorted, dvs_sorted, color='white', edgecolors=COLORS['accent'], marker='s', s=60, lw=1.5, zorder=10)
+    add_glow(ax1, delta_gammas_sorted, phases_sorted, COLORS['cyan'],
+             label=r'Max Phase Shift $\Delta\phi$')
+    ax1.scatter(delta_gammas_sorted, phases_sorted,
+                color='white', edgecolors=COLORS['cyan'],
+                s=60, lw=1.5, zorder=10)
 
-    prev_dv = None
-    for i, (dg, dv) in enumerate(zip(delta_gammas_sorted, dvs_sorted)):
-        if i == 0 or i == len(delta_gammas_sorted)-1 or (prev_dv is not None and abs(dv - prev_dv) > 0.01):
-            offset_y = 10 if i % 2 == 0 else -15
-            ax1_2.annotate(f'{dv:.2f}', xy=(dg, dv), xytext=(0, offset_y),
-                          textcoords='offset points', fontsize=7, ha='center')
-        prev_dv = dv
+    add_glow(ax1_2, delta_gammas_sorted, dvs_sorted, COLORS['accent'],
+             label=r'Velocity Asymmetry $|\Delta v|$')
+    ax1_2.scatter(delta_gammas_sorted, dvs_sorted,
+                  color='white', edgecolors=COLORS['accent'],
+                  marker='s', s=60, lw=1.5, zorder=10)
 
     ax1.axvline(0.0, color='gray', ls='--', alpha=0.5)
-    ax1.text(0.01, min(phases_sorted), r"Reciprocal$(\Delta\gamma=0)$", rotation=90, fontsize=8, color='gray', va='bottom')
+    ax1.text(0.01, min(phases_sorted),
+             r"Reciprocal$(\Delta\gamma=0)$",
+             rotation=90, fontsize=8, color='gray', va='bottom')
 
     style_axis(ax1)
     ax1_2.spines['top'].set_visible(False)
@@ -435,62 +456,78 @@ def create_figure3_combined(gamma_vals, gamma_data, alphas, a_res):
 
     ax1.set_xlabel(r'Nonreciprocity $|\Delta\gamma| = |\gamma_{12} - \gamma_{21}|$')
     ax1.set_ylabel(r'Phase Shift $\Delta\phi$', color=COLORS['cyan'])
-    ax1_2.set_ylabel(r'Asymmetry $|\Delta v| = ||v_1| - |v_2||$', color=COLORS['accent'])
+    ax1_2.set_ylabel(r'Asymmetry $|\Delta v|$', color=COLORS['accent'])
     ax1.tick_params(axis='y', colors=COLORS['cyan'])
 
     from matplotlib.lines import Line2D
     legend_elements = [
-        Line2D([0], [0], color=COLORS['cyan'], lw=2, label=r'Phase Shift $\Delta\phi$'),
-        Line2D([0], [0], color=COLORS['accent'], lw=2, label=r'Velocity Asymmetry $|\Delta v|$')
+        Line2D([0], [0], color=COLORS['cyan'], lw=2,
+               label=r'Phase Shift $\Delta\phi$'),
+        Line2D([0], [0], color=COLORS['accent'], lw=2,
+               label=r'Velocity Asymmetry $|\Delta v|$')
     ]
     ax1.legend(handles=legend_elements, loc='upper left')
     ax1.set_title("Tunable Nonreciprocity Statistics", fontweight='bold')
 
-    # 右边子图
+    # ====================== 右侧 α 扫描 ======================
     rho_peak = [np.max(data['peak_rho']) for data in a_res]
     R_rad = [data['rad'][-1] for data in a_res]
 
-    color1 = COLORS['cyan']
     ax2 = ax2_wrapper
+    color1 = COLORS['cyan']
+
     ax2.set_xlabel(r'Fractional Order $\alpha$')
     ax2.set_ylabel(r'Peak Density $\rho_{\rm max}$', color=color1)
+
     add_glow(ax2, alphas, rho_peak, color1, lw=1.5, alpha=0.8)
-    ax2.scatter(alphas, rho_peak, color='white', edgecolors=color1, s=60, lw=1.5, zorder=10)
+    ax2.scatter(alphas, rho_peak,
+                color='white', edgecolors=color1,
+                s=60, lw=1.5, zorder=10)
+
     ax2.tick_params(axis='y', labelcolor=color1)
     style_axis(ax2)
 
     res_idx = np.argmax(R_rad)
-    ax2.annotate(r'$\rho_{\rm max}$'+f' = {rho_peak[res_idx]:.2f}',
-                 xy=(alphas[res_idx], rho_peak[res_idx]),
-                 xytext=(alphas[res_idx] + 0.15, rho_peak[res_idx] + 0.5),
-                 fontsize=8, color=color1)
 
     ax2_2 = ax2.twinx()
     color2 = COLORS['accent']
     ax2_2.set_ylabel(r'Radiation Loss $R_{\rm rad}$', color=color2)
-    ax2_2.plot(alphas, R_rad, color=color2, marker='o', markersize=7, linestyle='--', lw=1.5, alpha=0.8)
-    ax2_2.scatter(alphas, R_rad, color='white', edgecolors=color2, s=60, lw=1.5, zorder=10)
-    ax2_2.tick_params(axis='y', colors=color2)
 
-    ax2_2.annotate(f'Resonant Collapse\n'+r'$\alpha$'+f' = {alphas[res_idx]:.2f}, '+r'$R$'+f' = {R_rad[res_idx]:.3f}',
-                   xy=(alphas[res_idx], R_rad[res_idx]),
-                   xytext=(alphas[res_idx] + 0.1, R_rad[res_idx] - 0.05),
-                   arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
-                   fontsize=9, fontweight='bold', ha='left')
-    
+    ax2_2.plot(alphas, R_rad,
+               color=color2, marker='o',
+               linestyle='--', lw=1.5, alpha=0.8)
+
+    ax2_2.scatter(alphas, R_rad,
+                  color='white', edgecolors=color2,
+                  s=60, lw=1.5, zorder=10)
+
+    ax2_2.tick_params(axis='y', colors=color2)
     ax2_2.set_ylim(-0.01, 0.14)
-    ax2.set_title(r'Super-focusing & Resonant Radiation ($\gamma_{12}=1.3$, $\Delta\gamma=0.6$)', loc='left', fontweight='bold')
+
+    ax2.set_title(
+        r'Super-focusing & Resonant Radiation '
+        r'($\gamma_{12}=1.3$, $\Delta\gamma=0.6$)',
+        loc='left', fontweight='bold'
+    )
 
     lines = [
-        Line2D([0], [0], color=color1, lw=2, label=r'$\rho_{\rm max}$'),
-        Line2D([0], [0], color=color2, lw=2, linestyle='--', label=r'$R_{\rm rad}$')
+        Line2D([0], [0], color=color1, lw=2,
+               label=r'$\rho_{\rm max}$'),
+        Line2D([0], [0], color=color2, lw=2,
+               linestyle='--', label=r'$R_{\rm rad}$')
     ]
-    ax2.legend(lines, labels=[l.get_label() for l in lines], loc='upper right', fontsize=10)
+    ax2.legend(lines, labels=[l.get_label() for l in lines],
+               loc='upper right', fontsize=10)
 
-    plt.subplots_adjust(left=0.08, right=0.95, top=0.9, bottom=0.15)
-    plt.savefig(f"{OUTPUT_DIR}/Fig3_Combined.png", bbox_inches='tight')
-    plt.savefig(f"{OUTPUT_DIR}/Fig3_Combined.pdf", bbox_inches='tight')
+    plt.subplots_adjust(left=0.08, right=0.95,
+                        top=0.9, bottom=0.15)
+
+    plt.savefig(f"{OUTPUT_DIR}/Fig3_Combined.png",
+                bbox_inches='tight')
+    plt.savefig(f"{OUTPUT_DIR}/Fig3_Combined.pdf",
+                bbox_inches='tight')
     plt.close()
+    
 
 def create_figure4_ultimate(all_results, cfg):
     fig = plt.figure(figsize=(12, 4.5), constrained_layout=True)
